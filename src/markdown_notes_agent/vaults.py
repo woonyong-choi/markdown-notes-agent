@@ -120,6 +120,7 @@ class VaultPolicy:
             "folder_rules": {},
         }
         read_only = []
+        path_writable: dict[str, bool] = {}
         folder_writable: dict[str, bool] = {}
         for key, entries, folder in (
             ("source_rules", paths, False),
@@ -140,14 +141,17 @@ class VaultPolicy:
                     folder_writable[path] = rules.writable and not self.excluded(
                         path, folder=True
                     )
-                if not folder and (not rules.writable or self.excluded(path)):
-                    read_only.append(path)
-        if sum(len(text.encode()) for text in catalog.values()) > 32 * 1024:
-            raise RequestError("request rules exceed 32 KiB", code="rules_limit")
+                if not folder:
+                    path_writable[path] = rules.writable and not self.excluded(path)
+                    if not path_writable[path]:
+                        read_only.append(path)
+        if sum(len(text.encode()) for text in catalog.values()) > 64 * 1024:
+            raise RequestError("request rules exceed 64 KiB", code="rules_limit")
         return {
             **scopes,
             "rule_catalog": catalog,
             "read_only": sorted(set(read_only)),
+            "path_writable": path_writable,
             "folder_writable": folder_writable,
             "policy_dependencies": dependencies,
         }

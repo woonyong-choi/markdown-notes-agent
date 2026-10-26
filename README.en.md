@@ -106,7 +106,9 @@ Markdown Notes Agent watches the registered folder and updates the search index.
 <details>
 <summary>Per-folder rule files</summary>
 
-`VAULT.md` can sit in any folder and applies to that folder and below. If settings between the top `---` lines conflict, Markdown Notes Agent uses the value from the file nearest to the note. It sends all written rules from the root down to the folder nearest to the note. If the written rules for one note path or the entire request exceed a total of 32 KiB, the request stops with a `rules_limit` error. It does not omit rules to fit the limit. The file has its own name so it does not mix with other AI tools' rule files (`AGENTS.md`, `CLAUDE.md` and so on).
+`VAULT.md` can sit in any folder and applies to that folder and below. If settings between the top `---` lines conflict, Markdown Notes Agent uses the value from the file nearest to the note. It sends all written rules from the root down to the folder nearest to the note. If the written rules for one note path exceed 32 KiB, or the distinct rules collected across the request exceed 64 KiB, the request stops with a `rules_limit` error. It does not omit rules to fit the limit. The file has its own name so it does not mix with other AI tools' rule files (`AGENTS.md`, `CLAUDE.md` and so on).
+
+The program computes effective write permissions for notes and target paths and passes them to both the drafting and review models. A nearer folder's `write: true` overrides an ancestor's `write: false`; ignored paths remain blocked. The program also checks new paths and conflicts with existing files. The reviewer receives all notes already read within the context budget, including candidates the drafter did not cite, so omitting a canonical note from citations does not hide it from duplicate review. The model is instructed to supplement a canonical note for the same topic and scope, avoid duplicating a read-only canonical note, and use sections instead of creating a file for each concept. Whether two notes have the same meaning remains a model judgment; this does not guarantee the absence of duplicates.
 
 | Setting | Default | Meaning |
 |---|---|---|
