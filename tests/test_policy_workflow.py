@@ -109,6 +109,12 @@ def execute(sync: Synchronizer, model: Script, **extra: Any) -> dict[str, Any]:
 def test_new_target_loads_own_policy_before_redraft_and_review(
     sync: Synchronizer,
 ) -> None:
+    (sync.documents.root / "VAULT.md").write_text(
+        "---\nwrite: false\n---\nKeep one canonical note per question."
+    )
+    (sync.documents.root / "b/VAULT.md").write_text(
+        "---\nwrite: true\n---\nWrite notes for this folder."
+    )
     create = {
         **decision(),
         "action": "new",
@@ -118,10 +124,36 @@ def test_new_target_loads_own_policy_before_redraft_and_review(
     result = execute(sync, model)
     assert len(model.drafts) == 2
     policy = model.drafts[-1]["policy"]
-    assert policy["source_rules"]["a/note.md"] == ["a/VAULT.md"]
-    assert policy["target_rules"]["b/new.md"] == ["b/VAULT.md"]
+    assert policy["source_rules"]["a/note.md"] == ["VAULT.md", "a/VAULT.md"]
+    assert policy["target_rules"]["b/new.md"] == ["VAULT.md", "b/VAULT.md"]
+    assert policy["path_writable"] == {"a/note.md": False, "b/new.md": True}
+    assert policy["folder_writable"] == {"": False}
     assert model.reviews[0]["policy"] == policy
     assert result["policy_dependencies"]["b/VAULT.md"]
+
+
+@pytest.mark.parametrize(
+    ("parent", "child", "ignored", "expected"),
+    [
+        (False, True, False, True),
+        (True, False, False, False),
+        (False, True, True, False),
+    ],
+)
+def test_policy_context_reports_effective_path_permissions(
+    tmp_path: Path, *, parent: bool, child: bool, ignored: bool, expected: bool
+) -> None:
+    (tmp_path / "notes").mkdir()
+    (tmp_path / "VAULT.md").write_text(f"---\nwrite: {str(parent).lower()}\n---")
+    (tmp_path / "notes/VAULT.md").write_text(f"---\nwrite: {str(child).lower()}\n---")
+    policy = VaultPolicy(tmp_path, "notes/private.md\n" if ignored else "")
+    path = "notes/private.md"
+
+    context = policy.context([], ["notes"], [path])
+
+    assert context["path_writable"][path] is expected
+    assert policy.writable(path) is expected
+    assert (path in context["read_only"]) is not expected
 
 
 def test_known_target_policy_is_bound_without_extra_model_call(

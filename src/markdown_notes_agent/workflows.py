@@ -62,6 +62,7 @@ class _State(TypedDict):
     source_rules: dict[str, list[str]]
     target_rules: dict[str, list[str]]
     folder_rules: dict[str, list[str]]
+    path_writable: dict[str, bool]
     folder_writable: dict[str, bool]
     policy_dependencies: dict[str, str | None]
     policy_rounds: int
@@ -158,6 +159,7 @@ _EMPTY: dict[str, Any] = {
     "source_rules": {},
     "target_rules": {},
     "folder_rules": {},
+    "path_writable": {},
     "folder_writable": {},
     "policy_dependencies": {},
     "policy_rounds": 0,
