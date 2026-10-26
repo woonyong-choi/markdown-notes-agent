@@ -145,8 +145,8 @@ class VaultPolicy:
                     path_writable[path] = rules.writable and not self.excluded(path)
                     if not path_writable[path]:
                         read_only.append(path)
-        if sum(len(text.encode()) for text in catalog.values()) > 32 * 1024:
-            raise RequestError("request rules exceed 32 KiB", code="rules_limit")
+        if sum(len(text.encode()) for text in catalog.values()) > 64 * 1024:
+            raise RequestError("request rules exceed 64 KiB", code="rules_limit")
         return {
             **scopes,
             "rule_catalog": catalog,

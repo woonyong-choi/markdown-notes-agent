@@ -11,7 +11,7 @@ from langgraph.graph import END, START, StateGraph
 
 from markdown_notes_agent.config import Settings
 from markdown_notes_agent.documents import Documents
-from markdown_notes_agent.errors import ConflictError, RequestError
+from markdown_notes_agent.errors import ConflictError, RequestError, ReviewRejectedError
 from markdown_notes_agent.model import CliModel, Intent, Planner
 from markdown_notes_agent.requests import Change, Proposal, issue_key
 from markdown_notes_agent.runtime import Runtime
@@ -174,6 +174,45 @@ def test_known_target_policy_is_bound_without_extra_model_call(
         "a/VAULT.md",
     ]
     assert list(policy["rule_catalog"]).count("VAULT.md") == 1
+
+
+@pytest.mark.parametrize("discovery", ["initial", "similar"])
+def test_review_receives_uncited_canonical_candidate(
+    sync: Synchronizer, monkeypatch: pytest.MonkeyPatch, discovery: str
+) -> None:
+    create = {
+        **decision(),
+        "action": "new",
+        "changes": [
+            {"path": "a/new.md", "operation": "create", "content": "# Note\nnew"}
+        ],
+    }
+    candidate = sync.read("b/note.md")
+    extra: dict[str, Any] = {}
+    if discovery == "initial":
+        source = sync.read("a/note.md")
+        extra = {
+            "documents": {"a/note.md": source, "b/note.md": candidate},
+            "signatures": {
+                "a/note.md": source["signature"],
+                "b/note.md": candidate["signature"],
+            },
+        }
+    else:
+        monkeypatch.setattr(
+            sync, "search", lambda *a, **k: {"documents": [{"path": "b/note.md"}]}
+        )
+    model = Script([create])
+    model.checks = [{"approved": False, "issues": ["Duplicate canonical note"]}]
+
+    with pytest.raises(ReviewRejectedError, match="Duplicate canonical note"):
+        execute(sync, model, **extra)
+
+    review = model.reviews[-1]
+    assert "b/note.md" not in review["input"]["decision"]["sources"]
+    assert review["input"]["documents"]["b/note.md"] == candidate
+    assert not (sync.documents.root / "a/new.md").exists()
+    assert sync.read("b/note.md")["hash"] == candidate["hash"]
 
 
 @pytest.mark.parametrize("discovery", ["read_more", "similar"])
@@ -350,11 +389,37 @@ def test_nearer_write_setting_overrides_root_without_global_stop(
 def test_aggregate_rule_budget_rejects_disjoint_folder_overflow(
     sync: Synchronizer,
 ) -> None:
-    for folder in ("a", "b"):
-        (sync.documents.root / folder / "VAULT.md").write_text("x" * (17 * 1024))
+    (sync.documents.root / "c").mkdir()
+    for folder in ("a", "b", "c"):
+        (sync.documents.root / folder / "VAULT.md").write_text("x" * (24 * 1024))
     with pytest.raises(RequestError) as error:
-        sync.policy.context(["a/note.md", "b/note.md"])
+        sync.policy.context(["a/note.md", "b/note.md", "c/note.md"])
     assert error.value.code == "rules_limit"
+
+
+def test_aggregate_rule_budget_keeps_multibyte_folder_rules(sync: Synchronizer) -> None:
+    text = "규칙" * 3000
+    for folder in ("a", "b"):
+        (sync.documents.root / folder / "VAULT.md").write_text(text)
+
+    context = sync.policy.context(["a/note.md", "b/note.md"])
+
+    assert len(text.encode()) * 2 == 36000
+    assert context["rule_catalog"] == {"a/VAULT.md": text, "b/VAULT.md": text}
+    assert context["source_rules"] == {
+        "a/note.md": ["a/VAULT.md"],
+        "b/note.md": ["b/VAULT.md"],
+    }
+    documents = {path: sync.read(path) for path in ("a/note.md", "b/note.md")}
+    model = Script([decision()])
+    execute(
+        sync,
+        model,
+        documents=documents,
+        signatures={path: doc["signature"] for path, doc in documents.items()},
+    )
+    assert model.drafts[-1]["policy"]["rule_catalog"] == context["rule_catalog"]
+    assert model.reviews[-1]["policy"]["rule_catalog"] == context["rule_catalog"]
 
 
 def test_legacy_queued_proposal_without_policy_snapshot_conflicts(

@@ -546,15 +546,8 @@ class _Workflow:
     # basis: estimate
     def review(self, state: _State) -> dict[str, Any]:
         self.guard(state)
-        changed = {c["path"] for c in state["proposal"].get("changes", [])}
-        cited = set(state["decision"].get("sources", []))
-        sources = {
-            path: doc
-            for path, doc in state["documents"].items()
-            if not changed or path in changed | cited
-        }
         prompt = review_prompt(
-            {**state, "documents": sources},
+            dict(state),
             describe_changes(state["proposal"], state["documents"]),
         )
         response = _call(
